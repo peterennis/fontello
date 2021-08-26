@@ -77,7 +77,7 @@ function checkValidCode(code) {
 //
 function findCode(min, max) {
   for (var code = min; code <= max; code += 1) {
-    if (checkValidCode(code) && !usedCodes[code]) {
+    if (checkValidCode(code) && (!usedCodes[code] || !usedCodes[code].selected())) {
       return code;
     }
   }
@@ -90,7 +90,7 @@ function findCode(min, max) {
 function findPrivateUseArea(preferredCode) {
   if (preferredCode &&
       checkValidCode(preferredCode) &&
-      !usedCodes[preferredCode] &&
+      (!usedCodes[preferredCode] || !usedCodes[preferredCode].selected()) &&
       preferredCode >= UNICODE_PRIVATE_USE_AREA_MIN &&
       preferredCode <= UNICODE_PRIVATE_USE_AREA_MAX) {
     return preferredCode;
@@ -113,7 +113,7 @@ function findPrivateUseArea(preferredCode) {
 function findAscii(preferredCode) {
   if (preferredCode &&
       checkValidCode(preferredCode) &&
-      !usedCodes[preferredCode] &&
+      (!usedCodes[preferredCode] || !usedCodes[preferredCode].selected()) &&
       preferredCode >= ASCII_PRINTABLE_MIN &&
       preferredCode <= ASCII_PRINTABLE_MAX) {
     return preferredCode;
@@ -129,26 +129,34 @@ function findAscii(preferredCode) {
 // Fallbacks to findPrivateUseArea()
 //
 function findUnicode(code) {
-  return (checkValidCode(code) && !usedCodes[code]) ? code : findPrivateUseArea();
+  if (checkValidCode(code) &&
+      (!usedCodes[code] || !usedCodes[code].selected())) {
+    return code;
+  }
+
+  return findPrivateUseArea();
 }
 
 
 // Sets a new glyph code using the specified encoding (N.app.encoding).
 //
 function allocateCode(glyph, encoding) {
+  var oldCode = glyph.code();
   var newCode;
+
+  if (usedCodes[oldCode] === glyph) usedCodes[oldCode] = null;
 
   switch (encoding) {
     case 'pua':
-      newCode = findPrivateUseArea(glyph.code());
+      newCode = findPrivateUseArea(oldCode);
       break;
 
     case 'ascii':
-      newCode = findAscii(glyph.code());
+      newCode = findAscii(oldCode);
       break;
 
     case 'unicode':
-      newCode = findUnicode(glyph.code());
+      newCode = findUnicode(oldCode);
       break;
 
     default:
@@ -164,7 +172,7 @@ function allocateCode(glyph, encoding) {
 }
 
 
-function observe(glyph) {
+function observeGlyph(glyph) {
   var previousCode = glyph.code();
 
   // If new glyph created with "selected" flag,
@@ -189,7 +197,7 @@ function observe(glyph) {
   // When user set the glyph code to a used one - swap them.
   glyph.code.subscribe(function (code) {
     if (this.selected()) {
-      if (usedCodes[code]) {
+      if (usedCodes[code] && usedCodes[code] !== this && usedCodes[code].selected()) {
         usedCodes[code].code(previousCode);
       }
 
@@ -201,32 +209,45 @@ function observe(glyph) {
           hex: this.customHex()
         }));
 
+        /* eslint-disable max-depth */
         if (checkValidCode(previousCode)) {
           this.code(previousCode);
         } else {
+          if (usedCodes[this.code()] === glyph) usedCodes[this.code()] = null;
           this.code(findUnicode(this.originalCode));
         }
       }
     }
   }, glyph);
+}
 
+
+function observeFontsList(fontsList) {
   // When user selects/deselects the glyph - allocate/free a code.
-  glyph.selected.subscribe(function (selected) {
-    if (selected) {
-      if (this.code() === this.originalCode) {
-        allocateCode(this, N.app.encoding());
-      } else {
-        // If code modified by user - don't try to remap
-        allocateCode(this, 'unicode');
+  fontsList.selectedGlyphs.subscribe(function (changes) {
+    changes.forEach(({ status, value }) => {
+      if (value._imported) {
+        // ignore first event if this glyph was just imported
+        value._imported = false;
+        return;
       }
-    } else {
-      usedCodes[this.code()] = null;
-    }
-  }, glyph);
+
+      if (status === 'added') {
+        if (value.code() === value.originalCode) {
+          allocateCode(value, N.app.encoding());
+        } else {
+          // If code modified by user - don't try to remap
+          allocateCode(value, 'unicode');
+        }
+      } else {
+        usedCodes[value.code()] = null;
+      }
+    });
+  }, fontsList, 'arrayChange');
 }
 
 
 module.exports = function (_N) {
   N = _N;
-  return { observe };
+  return { observeGlyph, observeFontsList };
 };

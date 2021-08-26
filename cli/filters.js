@@ -3,14 +3,11 @@
 'use strict';
 
 
-const _       = require('lodash');
-
-
 ////////////////////////////////////////////////////////////////////////////////
 
 
 module.exports.parserParameters = {
-  addHelp:      true,
+  add_help:     true,
   help:         'list registeres filters',
   description:  'List registered filters'
 };
@@ -22,8 +19,8 @@ module.exports.commandLineArguments = [
     options: {
       dest:   'mask',
       help:   'Show only channels, containing MASK in name',
-      type:   'string',
-      defaultValue: []
+      type:   'str',
+      default: []
     }
   },
 
@@ -32,7 +29,7 @@ module.exports.commandLineArguments = [
     options: {
       dest:   'short',
       help:   'Hide details, show channel names only',
-      action: 'storeTrue'
+      action: 'store_true'
     }
   }
 
@@ -52,7 +49,7 @@ module.exports.run = async function (N, args) {
   /*eslint-disable no-console*/
   console.log('\n');
 
-  _.forEach(N.wire.stat(), function (hook) {
+  for (let hook of N.wire.stat()) {
     // try to filter by pattern, if set
     if (args.mask && (hook.name.indexOf(args.mask) === -1)) {
       return;
@@ -64,7 +61,8 @@ module.exports.run = async function (N, args) {
     } else {
       // long format
       console.log(`\n${hook.name} -->\n`);
-      _.forEach(hook.listeners, function (h) {
+      /* eslint-disable max-depth */
+      for (let h of hook.listeners) {
         let flags = [];
 
         if (h.ensure)   flags.push('permanent');
@@ -74,9 +72,9 @@ module.exports.run = async function (N, args) {
           `  - [${h.priority}] ${h.name}     (cnt: ${h.ncalled})` +
           (flags.length ? '    !' + flags.join(', ') : '')
         );
-      });
+      }
     }
-  });
+  }
 
   console.log('\n');
 

@@ -1,11 +1,10 @@
 'use strict';
 
 
-var Bloodhound = require('typeahead.js/dist/bloodhound.js');
+var Bloodhound = require('corejs-typeahead/dist/bloodhound.js');
 var _  = require('lodash');
 var ko = require('knockout');
-
-var savedConfig = null;
+var deflate = require('pako/lib/deflate');
 
 
 var GLYPH_SIZE_MIN = 12;
@@ -70,7 +69,6 @@ function ToolbarModel() {
   this.hinting        = N.app.hinting;
   this.apiMode        = N.app.apiMode;
   this.apiUrl         = N.app.apiUrl;
-  this.getConfig      = N.app.getConfig;
 
   this.fontName.subscribe(function (value) {
     var cleared = String(value).toLowerCase().replace(/[^a-z0-9_\-]/g, '');
@@ -90,12 +88,6 @@ N.wire.once('navigate.done', function (data) {
   // Save user session (loaded via API) back to database
   function save() {
     if (!N.app.apiSessionId) { return Promise.resolve(); }
-
-    // Skip first  save attempt (it happens on app init)
-    if (!savedConfig) {
-      savedConfig = N.app.getConfig();
-      return Promise.resolve();
-    }
 
     toolbar.saving(true);
     return N.app.serverSave()
@@ -147,7 +139,10 @@ N.wire.once('navigate.done', function (data) {
     toolbar.building(true);
 
     let rpc_params = {
-      config: new Blob([ JSON.stringify(config) ], { type: 'application/json' })
+      config: new Blob(
+        [ deflate.gzip(JSON.stringify(config)) ],
+        { type: 'application/octet-stream' }
+      )
     };
 
     return N.io.rpc('fontello.font.generate', rpc_params).then(res => {
@@ -161,6 +156,9 @@ N.wire.once('navigate.done', function (data) {
         .attr({ id, src: url })
         .css('display', 'none')
         .appendTo(window.document.body);
+    }, err => {
+      toolbar.building(false);
+      throw err;
     });
   });
 
@@ -206,6 +204,16 @@ N.wire.once('navigate.done', function (data) {
       source: keywords.ttAdapter()
     })
     .focus();
+
+  //
+  // Initialize "get config" button
+  //
+
+  $('.toolbar__get-config').on('click', function (event) {
+    var config = N.app.getConfig();
+    var href = 'data:application/octet-stream,' + encodeURIComponent(JSON.stringify(config, null, '  '));
+    event.target.href = href;
+  });
 
   //
   // Apply KO bindings

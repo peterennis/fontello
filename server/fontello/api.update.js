@@ -4,8 +4,9 @@
 
 
 const _           = require('lodash');
-const fs          = require('mz/fs');
 const validator   = require('is-my-json-valid');
+const read        = require('util').promisify(require('fs').readFile);
+const gunzip      = require('util').promisify(require('zlib').gunzip);
 
 
 const config_schema = require('./font/_lib/config_schema');
@@ -38,7 +39,9 @@ module.exports = function (N, apiPath) {
     let configFile;
 
     // Extract config
-    configFile = await fs.readFile(configPath, { encoding: 'utf-8' });
+    configFile = await read(configPath);
+
+    configFile = (await gunzip(configFile)).toString();
 
     let config;
 
@@ -74,10 +77,15 @@ module.exports = function (N, apiPath) {
 
     linkData.config = config;
 
-    await N.shortlinks.put(
-      env.params.sid,
-      linkData,
-      { ttl: 6 * 60 * 60 * 1000, valueEncoding: 'json' }
-    );
+    // N.shortlinks.put is a function from `level-ttl`
+    // that does not support promises (just always returns undefined)
+    await new Promise((resolve, reject) => {
+      N.shortlinks.put(
+        env.params.sid,
+        linkData,
+        { ttl: 6 * 60 * 60 * 1000, valueEncoding: 'json' },
+        err => { if (err) reject(err); else resolve(); }
+      );
+    });
   });
 };

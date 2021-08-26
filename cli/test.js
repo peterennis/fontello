@@ -4,9 +4,7 @@
 'use strict';
 
 
-const _       = require('lodash');
 const glob    = require('glob');
-const Mocha   = require('mocha');
 const path    = require('path');
 
 
@@ -14,7 +12,7 @@ const path    = require('path');
 
 
 module.exports.parserParameters = {
-  addHelp: true,
+  add_help: true,
   help: 'run test suites',
   description: 'Run all tests of enabled apps'
 };
@@ -27,7 +25,7 @@ module.exports.commandLineArguments = [
       metavar: 'APP_NAME',
       help: 'Run tests of specific application only',
       nargs: '?',
-      defaultValue: null
+      default: null
     }
   },
 
@@ -36,8 +34,8 @@ module.exports.commandLineArguments = [
     options: {
       dest:   'mask',
       help:   'Run only tests, containing MASK in name',
-      type:   'string',
-      defaultValue: []
+      type:   'str',
+      default: []
     }
   }
 ];
@@ -60,6 +58,7 @@ module.exports.run = async function (N, args) {
     .then(() => N.wire.emit('init:services', N))
     .then(() => N.wire.emit('init:tests', N));
 
+  let Mocha        = require('mocha');
   let mocha        = new Mocha({ timeout: 60000 });
   let applications = N.apps;
 
@@ -68,9 +67,9 @@ module.exports.run = async function (N, args) {
 
   // if app set, check that it's valid
   if (args.app) {
-    if (!_.find(applications, app => app.name === args.app)) {
+    if (!applications.some(app => app.name === args.app)) {
       let msg = `Invalid application name: ${args.app}\n` +
-          'Valid apps are:  ' + _.map(applications, app => app.name).join(', ');
+          'Valid apps are:  ' + applications.map(app => app.name).join(', ');
 
       throw msg;
     }
@@ -94,7 +93,7 @@ module.exports.run = async function (N, args) {
     testedApps = applications;
   }
 
-  _.forEach(testedApps, app => {
+  for (let app of testedApps) {
     glob.sync('**', { cwd: app.root + '/test' })
       // skip files when
       // - filename starts with _, e.g.: /foo/bar/_baz.js
@@ -110,7 +109,7 @@ module.exports.run = async function (N, args) {
           mocha.files.push(`${app.root}/test/${file}`);
         }
       });
-  });
+  }
 
   await new Promise((resolve, reject) => {
     mocha.run(err => (err ? reject(err) : resolve()));

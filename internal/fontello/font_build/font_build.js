@@ -18,8 +18,7 @@ const fontWorker = require('./_lib/worker');
 const crypto     = require('crypto');
 const path       = require('path');
 const os         = require('os');
-const Promise    = require('bluebird');
-const exists     = Promise.promisify(require('level-exists'));
+const exists     = require('util').promisify(require('level-exists'));
 
 
 // Returns unique identifier for requested list of glyphs.
@@ -72,7 +71,7 @@ module.exports = function (N, apiPath) {
       clientConfig: data.config,
       builderConfig,
       cwdDir: N.mainApp.root,
-      tmpDir: path.join(os.tmpDir(), 'fontello', `fontello-${data.fontId.substr(0, 8)}`),
+      tmpDir: path.join(os.tmpdir(), 'fontello', `fontello-${data.fontId.substr(0, 8)}`),
       timestamp: Date.now(),
       result: null,
       logger
@@ -85,13 +84,28 @@ module.exports = function (N, apiPath) {
     logger.info('New job created: %j', { font_id: data.fontId, queue_length: Object.keys(tasks).length });
 
     // Wait for task finished
-    let zipData = await taskInfo.result;
+    let zipData;
 
-    await N.downloads.put(
-      taskInfo.fontId,
-      zipData,
-      { ttl: 5 * 60 * 1000, valueEncoding: 'binary' }
-    );
+    try {
+      zipData = await taskInfo.result;
+    } catch (err) {
+      // show error message to the client (e.g. invalid glyph, #746)
+      throw {
+        code: N.io.CLIENT_ERROR,
+        message: `Cannot generate font: ${err.message || err}`
+      };
+    }
+
+    // N.downloads.put is a function from `level-ttl`
+    // that does not support promises (just always returns undefined)
+    await new Promise((resolve, reject) => {
+      N.downloads.put(
+        taskInfo.fontId,
+        zipData,
+        { ttl: 5 * 60 * 1000, valueEncoding: 'binary' },
+        err => { if (err) reject(err); else resolve(); }
+      );
+    });
 
     delete tasks[data.fontId];
   });

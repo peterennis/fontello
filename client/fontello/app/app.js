@@ -4,6 +4,11 @@
 
 var _  = require('lodash');
 var ko = require('knockout');
+var deflate = require('pako/lib/deflate');
+
+// Turn on deferred updates globally for knockout
+//
+ko.options.deferUpdates = true;
 
 // Set font-specific variables to defaults
 // Used in app init & settings menu
@@ -88,7 +93,10 @@ N.wire.once('navigate.done', { priority: -90 }, function () {
 
     return N.io.rpc('fontello.api.update', {
       sid: N.app.apiSessionId,
-      config: new Blob([ JSON.stringify(N.app.getConfig()) ], { type: 'application.json' })
+      config: new Blob(
+        [ deflate.gzip(JSON.stringify(N.app.getConfig())) ],
+        { type: 'application/octet-stream' }
+      )
     });
   };
 
@@ -165,14 +173,12 @@ N.wire.once('navigate.done', { priority: -10 }, function page_setup() {
 
     N.app.fontsList.unselectAll();
 
-    N.app.fontsList.lock();
     _.each(N.app.fontsList.fonts, function (font) {
       _.each(font.glyphs(), function (glyph) {
         glyph.code(glyph.originalCode);
         glyph.name(glyph.originalName);
       });
     });
-    N.app.fontsList.unlock();
   });
 
   N.wire.on('cmd:toggle_hinting', function toggle_hinting() {
@@ -195,21 +201,17 @@ N.wire.once('navigate.done', { priority: -10 }, function page_setup() {
   });
 
   N.wire.on('cmd:clear_custom_icons', function clear_custom_icons() {
-    var custom_icons = N.app.fontsList.getFont('custom_icons');
+    let custom_icons = N.app.fontsList.getFont('custom_icons');
 
     // if something selected - delete selected icons
     // if nothing selected - delete all
 
-    N.app.fontsList.lock();
-    if (_.isEmpty(custom_icons.selectedGlyphs())) {
-      custom_icons.glyphs.peek().slice().forEach(function (glyph) {
-        custom_icons.removeGlyph(glyph.uid);
-      });
+    let selectedGlyphs = custom_icons.glyphs().filter(g => g.selected());
+
+    if (selectedGlyphs.length === 0) {
+      custom_icons.removeGlyph(); // remove all
     } else {
-      custom_icons.selectedGlyphs().slice().forEach(function (uid) {
-        custom_icons.removeGlyph(uid);
-      });
+      selectedGlyphs.forEach(glyph => custom_icons.removeGlyph(glyph.uid));
     }
-    N.app.fontsList.unlock();
   });
 });
